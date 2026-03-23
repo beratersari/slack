@@ -1,0 +1,25 @@
+# Django Framework
+Django>=4.2,<5.0
+
+# REST Framework
+djangorestframework>=3.14
+
+# Authentication
+bcrypt==3.2.2
+PyJWT>=2.8.0
+
+# CORS support
+django-cors-headers>=4.3
+
+# Environment variables
+python-dotenv>=1.0.0
+
+# API Documentation (Swagger/OpenAPI)
+drf-spectacular>=0.27
+
+# Faker for mock data
+Faker>=22.0
+
+# Development
+black>=23.0
+flake8>=6.0
