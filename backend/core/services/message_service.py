@@ -71,6 +71,15 @@ class MessageService(BaseService):
             dm_recipient_id=recipient_id
         )
     
+    def _has_channel_access(self, user: User, channel_id: int) -> bool:
+        """
+        Check if user has access to a channel.
+        Admins and super users have access to all channels.
+        """
+        if user.is_admin() or user.is_super_user_type():
+            return True
+        return self.channel_repository.is_member(channel_id, user.id)
+
     def reply_to_message(self, sender: User, parent_message_id: int, content: str) -> Message:
         """
         Reply to a message (create a thread).
@@ -84,7 +93,7 @@ class MessageService(BaseService):
         
         # Check access: user must be in the same channel or be part of the DM
         if parent.channel:
-            if not self.channel_repository.is_member(parent.channel_id, sender.id):
+            if not self._has_channel_access(sender, parent.channel_id):
                 raise ValueError('You do not have access to this channel')
             return self.repository.create_message(
                 sender_id=sender.id,
@@ -114,7 +123,7 @@ class MessageService(BaseService):
         Raises:
             ValueError: If user doesn't have access to the channel
         """
-        if not self.channel_repository.is_member(channel_id, user.id):
+        if not self._has_channel_access(user, channel_id):
             raise ValueError('You do not have access to this channel')
         
         return self.repository.get_channel_messages(channel_id)
@@ -132,7 +141,7 @@ class MessageService(BaseService):
         
         # Check access
         if parent.channel:
-            if not self.channel_repository.is_member(parent.channel_id, user.id):
+            if not self._has_channel_access(user, parent.channel_id):
                 raise ValueError('You do not have access to this channel')
         elif parent.is_dm:
             if user.id not in [parent.sender_id, parent.dm_recipient_id]:
@@ -215,7 +224,7 @@ class MessageService(BaseService):
         
         # Check access - same logic as viewing the message
         if message.channel:
-            if not self.channel_repository.is_member(message.channel_id, user.id):
+            if not self._has_channel_access(user, message.channel_id):
                 raise ValueError('You do not have access to this channel')
         elif message.is_dm:
             if user.id not in [message.sender_id, message.dm_recipient_id]:
@@ -236,7 +245,7 @@ class MessageService(BaseService):
         
         # Check access
         if message.channel:
-            if not self.channel_repository.is_member(message.channel_id, user.id):
+            if not self._has_channel_access(user, message.channel_id):
                 raise ValueError('You do not have access to this channel')
         elif message.is_dm:
             if user.id not in [message.sender_id, message.dm_recipient_id]:

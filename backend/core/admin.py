@@ -29,7 +29,7 @@ class UserAdmin(BaseUserAdmin):
         }),
         (_('User Type'), {'fields': ('user_type',)}),
         (_('Permissions'), {
-            'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions'),
+            'fields': ('is_active', 'is_staff', 'is_superuser', 'workspaces', 'user_permissions'),
         }),
         (_('Important dates'), {'fields': ('last_login', 'created_at', 'updated_at')}),
     )

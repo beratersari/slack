@@ -3,7 +3,7 @@ Channel service for business logic related to Channel model.
 """
 from typing import List, Optional, Dict, Any
 from core.models import Channel, ChannelMembership, ChannelRole, ChannelType, User, UserType
-from core.repositories import ChannelRepository, GroupRepository, UserRepository
+from core.repositories import ChannelRepository, WorkspaceRepository, UserRepository
 
 
 class ChannelService:
@@ -13,7 +13,7 @@ class ChannelService:
     
     def __init__(self):
         self.channel_repository = ChannelRepository()
-        self.group_repository = GroupRepository()
+        self.workspace_repository = WorkspaceRepository()
         self.user_repository = UserRepository()
     
     def get_channel_by_id(self, channel_id: int) -> Optional[Channel]:
@@ -28,34 +28,34 @@ class ChannelService:
         """Get all active channels."""
         return self.channel_repository.get_active_channels()
     
-    def get_channels_by_group(self, group_id: int) -> List[Channel]:
-        """Get all channels in a group."""
-        return self.channel_repository.get_channels_by_group(group_id)
+    def get_channels_by_workspace(self, workspace_id: int) -> List[Channel]:
+        """Get all channels in a workspace."""
+        return self.channel_repository.get_channels_by_workspace(workspace_id)
     
     def get_channels_by_member(self, user_id: int) -> List[Channel]:
         """Get all channels where user is a member."""
         return self.channel_repository.get_channels_by_member(user_id)
     
-    def can_create_channel(self, user: User, group_id: int) -> bool:
-        """Check if user can create channels in a group."""
+    def can_create_channel(self, user: User, workspace_id: int) -> bool:
+        """Check if user can create channels in a workspace."""
         # Admins and super users can create channels anywhere
         if user.is_admin() or user.is_super_user_type():
             return True
         
-        # Group admins/owners can create channels in their group
-        return self.group_repository.is_admin(group_id, user.id)
+        # Workspace admins/owners can create channels in their workspace
+        return self.workspace_repository.is_admin(workspace_id, user.id)
     
-    def create_channel(self, name: str, group_id: int, created_by_id: int,
+    def create_channel(self, name: str, workspace_id: int, created_by_id: int,
                        channel_type: str = ChannelType.PUBLIC.value,
                        description: str = '', topic: str = '', **kwargs) -> Channel:
         """
         Create a new channel.
         
-        Only admins, super users, and group admins can create channels.
+        Only admins, super users, and workspace admins can create channels.
         
         Args:
             name: Channel name
-            group_id: ID of the group
+            workspace_id: ID of the workspace
             created_by_id: ID of the channel creator
             channel_type: Type of channel (public, private, direct)
             description: Channel description
@@ -72,25 +72,25 @@ class ChannelService:
         if not creator:
             raise ValueError(f"User with ID {created_by_id} not found")
         
-        group = self.group_repository.get_by_id(group_id)
-        if not group:
-            raise ValueError(f"Group with ID {group_id} not found")
+        workspace = self.workspace_repository.get_by_id(workspace_id)
+        if not workspace:
+            raise ValueError(f"Workspace with ID {workspace_id} not found")
         
-        if not self.can_create_channel(creator, group_id):
-            raise ValueError("You don't have permission to create channels in this group")
+        if not self.can_create_channel(creator, workspace_id):
+            raise ValueError("You don't have permission to create channels in this workspace")
         
-        # Check for duplicate channel name in the group
+        # Check for duplicate channel name in the workspace
         existing = Channel.objects.filter(
             name=name, 
-            group_id=group_id, 
+            workspace_id=workspace_id, 
             is_active=True
         ).first()
         if existing:
-            raise ValueError(f"Channel with name '{name}' already exists in this group")
+            raise ValueError(f"Channel with name '{name}' already exists in this workspace")
         
         return self.channel_repository.create_channel(
             name=name,
-            group_id=group_id,
+            workspace_id=workspace_id,
             created_by_id=created_by_id,
             channel_type=channel_type,
             description=description,
@@ -102,7 +102,7 @@ class ChannelService:
         """
         Update channel information.
         
-        Only channel owner, group owner, or admins can update.
+        Only channel owner, workspace owner, or admins can update.
         """
         channel = self.channel_repository.get_by_id(channel_id)
         if not channel:
@@ -117,7 +117,7 @@ class ChannelService:
             user.is_admin() or 
             user.is_super_user_type() or
             channel.created_by_id == user_id or
-            channel.group.owner_id == user_id
+            channel.workspace.owner_id == user_id
         )
         
         if not can_update:
@@ -129,7 +129,7 @@ class ChannelService:
         """
         Delete a channel (soft delete).
         
-        Only channel owner, group owner, or admins can delete.
+        Only channel owner, workspace owner, or admins can delete.
         """
         channel = self.channel_repository.get_by_id(channel_id)
         if not channel:
@@ -144,7 +144,7 @@ class ChannelService:
             user.is_admin() or 
             user.is_super_user_type() or
             channel.created_by_id == user_id or
-            channel.group.owner_id == user_id
+            channel.workspace.owner_id == user_id
         )
         
         if not can_delete:
@@ -161,7 +161,7 @@ class ChannelService:
         """
         Add a member to a channel.
         
-        Only channel owner, group admins, or system admins can add members.
+        Only channel owner, workspace admins, or system admins can add members.
         """
         channel = self.channel_repository.get_by_id(channel_id)
         if not channel:
@@ -175,16 +175,16 @@ class ChannelService:
         if not added_by:
             raise ValueError(f"User with ID {added_by_id} not found")
         
-        # Check if user is a member of the group first
-        if not self.group_repository.is_member(channel.group_id, user_id):
-            raise ValueError("User must be a member of the group first")
+        # Check if user is a member of the workspace first
+        if not self.workspace_repository.is_member(channel.workspace_id, user_id):
+            raise ValueError("User must be a member of the workspace first")
         
         # Check permissions
         can_add = (
             added_by.is_admin() or 
             added_by.is_super_user_type() or
             self.channel_repository.is_owner(channel_id, added_by_id) or
-            self.group_repository.is_admin(channel.group_id, added_by_id)
+            self.workspace_repository.is_admin(channel.workspace_id, added_by_id)
         )
         
         if not can_add:
@@ -200,7 +200,7 @@ class ChannelService:
         """
         Remove a member from a channel.
         
-        Only channel owner, group admins, or system admins can remove members.
+        Only channel owner, workspace admins, or system admins can remove members.
         Users can also remove themselves.
         """
         channel = self.channel_repository.get_by_id(channel_id)
@@ -216,7 +216,7 @@ class ChannelService:
             removed_by.is_admin() or 
             removed_by.is_super_user_type() or
             self.channel_repository.is_owner(channel_id, removed_by_id) or
-            self.group_repository.is_admin(channel.group_id, removed_by_id) or
+            self.workspace_repository.is_admin(channel.workspace_id, removed_by_id) or
             user_id == removed_by_id  # Users can remove themselves
         )
         
@@ -237,7 +237,7 @@ class ChannelService:
         """Check if user is a member of a channel."""
         return self.channel_repository.is_member(channel_id, user_id)
     
-    def search_channels(self, query: str, group_id: Optional[int] = None,
+    def search_channels(self, query: str, workspace_id: Optional[int] = None,
                         user_id: Optional[int] = None) -> List[Channel]:
         """Search channels by query.
         
@@ -246,32 +246,32 @@ class ChannelService:
         """
         if not query:
             return []
-        return self.channel_repository.search_channels(query, group_id, user_id)
+        return self.channel_repository.search_channels(query, workspace_id, user_id)
     
     def get_or_create_dm_channel(self, user1_id: int, user2_id: int, 
-                                  group_id: int) -> Channel:
+                                  workspace_id: int) -> Channel:
         """
         Get or create a direct message channel between two users.
         """
-        # Both users must be members of the group
-        if not self.group_repository.is_member(group_id, user1_id):
-            raise ValueError("User 1 is not a member of the group")
-        if not self.group_repository.is_member(group_id, user2_id):
-            raise ValueError("User 2 is not a member of the group")
+        # Both users must be members of the workspace
+        if not self.workspace_repository.is_member(workspace_id, user1_id):
+            raise ValueError("User 1 is not a member of the workspace")
+        if not self.workspace_repository.is_member(workspace_id, user2_id):
+            raise ValueError("User 2 is not a member of the workspace")
         
         return self.channel_repository.get_or_create_dm_channel(
-            user1_id, user2_id, group_id
+            user1_id, user2_id, workspace_id
         )
     
-    def get_channel_statistics(self, group_id: Optional[int] = None) -> Dict[str, Any]:
+    def get_channel_statistics(self, workspace_id: Optional[int] = None) -> Dict[str, Any]:
         """Get channel statistics."""
-        return self.channel_repository.get_channel_statistics(group_id)
+        return self.channel_repository.get_channel_statistics(workspace_id)
     
     def join_public_channel(self, channel_id: int, user_id: int) -> ChannelMembership:
         """
         Join a public channel.
         
-        User must be a member of the group.
+        User must be a member of the workspace.
         """
         channel = self.channel_repository.get_by_id(channel_id)
         if not channel:
@@ -280,9 +280,9 @@ class ChannelService:
         if not channel.is_public():
             raise ValueError("Can only join public channels without invitation")
         
-        # Check if user is a member of the group
-        if not self.group_repository.is_member(channel.group_id, user_id):
-            raise ValueError("You must be a member of the group to join channels")
+        # Check if user is a member of the workspace
+        if not self.workspace_repository.is_member(channel.workspace_id, user_id):
+            raise ValueError("You must be a member of the workspace to join channels")
         
         # Check if already a member
         if self.channel_repository.is_member(channel_id, user_id):

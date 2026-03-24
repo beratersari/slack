@@ -8,17 +8,28 @@ from .views import (
     TokenRefreshView, UserProfileView, ChangePasswordView,
     PasswordResetRequestView, PasswordResetConfirmView,
     UserListView, UserDetailView, UserSearchView, UserStatisticsView,
-    # Group views
-    GroupListView, GroupDetailView, GroupMembersView, 
-    GroupMemberDetailView, GroupSearchView,
+    # Workspace views
+    WorkspaceListView, WorkspaceDetailView, WorkspaceMembersView,
+    WorkspaceMemberDetailView, WorkspaceSearchView,
     # Channel views
     ChannelListView, ChannelDetailView, ChannelMembersView,
     ChannelMemberDetailView, ChannelJoinView, ChannelSearchView,
     DirectMessageView,
+    # Channel Section views
+    ChannelSectionListView, ChannelSectionDetailView, ChannelSectionReorderView,
+    ChannelSectionToggleCollapseView, ChannelSectionChannelView,
+    ChannelSectionReorderChannelsView, ChannelSectionMoveChannelView,
     # Message views
     ChannelMessagesView, MessageDetailView, MessageThreadView,
     MessageEditHistoryView, DirectMessageListView, DirectMessageConversationView,
-    MessageSearchView
+    MessageSearchView,
+    # Emoji views
+    MessageReactionsView, MessageReactionToggleView,
+    CustomEmojiListView, CustomEmojiDetailView, CustomEmojiAliasView, CustomEmojiSearchView,
+    # Notification views
+    NotificationListView, NotificationDetailView, NotificationSettingsView,
+    UnreadCountView, ChannelUnreadView, KeywordAlertListView, KeywordAlertDetailView,
+    MuteChannelView, DoNotDisturbView
 )
 
 urlpatterns = [
@@ -41,12 +52,12 @@ urlpatterns = [
     path('users/', UserListView.as_view(), name='user-list'),
     path('users/<int:user_id>/', UserDetailView.as_view(), name='user-detail'),
     
-    # Group endpoints
-    path('groups/', GroupListView.as_view(), name='group-list'),
-    path('groups/search/', GroupSearchView.as_view(), name='group-search'),
-    path('groups/<int:group_id>/', GroupDetailView.as_view(), name='group-detail'),
-    path('groups/<int:group_id>/members/', GroupMembersView.as_view(), name='group-members'),
-    path('groups/<int:group_id>/members/<int:user_id>/', GroupMemberDetailView.as_view(), name='group-member-detail'),
+    # Workspace endpoints
+    path('workspaces/', WorkspaceListView.as_view(), name='workspace-list'),
+    path('workspaces/search/', WorkspaceSearchView.as_view(), name='workspace-search'),
+    path('workspaces/<int:workspace_id>/', WorkspaceDetailView.as_view(), name='workspace-detail'),
+    path('workspaces/<int:workspace_id>/members/', WorkspaceMembersView.as_view(), name='workspace-members'),
+    path('workspaces/<int:workspace_id>/members/<int:user_id>/', WorkspaceMemberDetailView.as_view(), name='workspace-member-detail'),
     
     # Channel endpoints
     path('channels/', ChannelListView.as_view(), name='channel-list'),
@@ -67,4 +78,32 @@ urlpatterns = [
     # Direct Message endpoints
     path('dm/', DirectMessageListView.as_view(), name='dm-list'),
     path('dm/<int:user_id>/', DirectMessageConversationView.as_view(), name='dm-conversation'),
+
+    # Channel Section endpoints
+    path('sections/', ChannelSectionListView.as_view(), name='section-list'),
+    path('sections/reorder/', ChannelSectionReorderView.as_view(), name='section-reorder'),
+    path('sections/move-channel/', ChannelSectionMoveChannelView.as_view(), name='section-move-channel'),
+    path('sections/<int:section_id>/', ChannelSectionDetailView.as_view(), name='section-detail'),
+    path('sections/<int:section_id>/toggle-collapse/', ChannelSectionToggleCollapseView.as_view(), name='section-toggle-collapse'),
+    path('sections/<int:section_id>/channels/', ChannelSectionChannelView.as_view(), name='section-channels'),
+    path('sections/<int:section_id>/reorder-channels/', ChannelSectionReorderChannelsView.as_view(), name='section-reorder-channels'),
+
+    # Emoji endpoints
+    path('messages/<int:message_id>/reactions/', MessageReactionsView.as_view(), name='message-reactions'),
+    path('messages/<int:message_id>/reactions/toggle/', MessageReactionToggleView.as_view(), name='message-reaction-toggle'),
+    path('emojis/', CustomEmojiListView.as_view(), name='emoji-list'),
+    path('emojis/search/', CustomEmojiSearchView.as_view(), name='emoji-search'),
+    path('emojis/alias/', CustomEmojiAliasView.as_view(), name='emoji-alias'),
+    path('emojis/<int:emoji_id>/', CustomEmojiDetailView.as_view(), name='emoji-detail'),
+
+    # Notification endpoints
+    path('notifications/', NotificationListView.as_view(), name='notification-list'),
+    path('notifications/<int:notification_id>/', NotificationDetailView.as_view(), name='notification-detail'),
+    path('notifications/settings/', NotificationSettingsView.as_view(), name='notification-settings'),
+    path('notifications/unread/', UnreadCountView.as_view(), name='unread-count'),
+    path('notifications/unread/<int:channel_id>/', ChannelUnreadView.as_view(), name='channel-unread'),
+    path('notifications/keywords/', KeywordAlertListView.as_view(), name='keyword-alert-list'),
+    path('notifications/keywords/<int:keyword_id>/', KeywordAlertDetailView.as_view(), name='keyword-alert-detail'),
+    path('notifications/mute/channel/<int:channel_id>/', MuteChannelView.as_view(), name='mute-channel'),
+    path('notifications/dnd/', DoNotDisturbView.as_view(), name='do-not-disturb'),
 ]

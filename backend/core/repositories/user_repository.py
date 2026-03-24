@@ -45,9 +45,9 @@ class UserRepository(BaseRepository[User]):
         """Get all super users."""
         return self.get_users_by_type(UserType.SUPER_USER.value)
     
-    def get_super_group_users(self) -> List[User]:
-        """Get all super group users."""
-        return self.get_users_by_type(UserType.SUPER_GROUP_USER.value)
+    def get_super_workspace_users(self) -> List[User]:
+        """Get all super workspace users."""
+        return self.get_users_by_type(UserType.SUPER_WORKSPACE_USER.value)
     
     def get_regular_users(self) -> List[User]:
         """Get all regular users."""

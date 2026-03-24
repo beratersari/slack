@@ -1,11 +1,11 @@
 """
-Channel model for communication channels within groups.
+Channel model for communication channels within workspaces.
 """
 from enum import Enum
 from django.db import models
 from django.conf import settings
 from .base import BaseModel
-from .group import Group
+from .workspace import Workspace
 
 
 class ChannelType(Enum):
@@ -36,17 +36,17 @@ class ChannelRole(Enum):
 
 class Channel(BaseModel):
     """
-    Channel model for communication within groups.
-    
-    Channels are where conversations happen. Each channel belongs to a group.
+    Channel model for communication within workspaces.
+
+    Channels are where conversations happen. Each channel belongs to a workspace.
     """
     name = models.CharField(max_length=80, db_index=True)
     description = models.TextField(blank=True, null=True)
     topic = models.CharField(max_length=250, blank=True, null=True)
-    
-    # Group this channel belongs to
-    group = models.ForeignKey(
-        Group,
+
+    # Workspace this channel belongs to
+    workspace = models.ForeignKey(
+        Workspace,
         on_delete=models.CASCADE,
         related_name='channels'
     )
@@ -83,13 +83,13 @@ class Channel(BaseModel):
         ordering = ['name']
         indexes = [
             models.Index(fields=['name']),
-            models.Index(fields=['group']),
+            models.Index(fields=['workspace']),
             models.Index(fields=['channel_type']),
             models.Index(fields=['is_active']),
         ]
 
     def __str__(self):
-        return f"#{self.name} ({self.group.name})"
+        return f"#{self.name} ({self.workspace.name})"
 
     @property
     def member_count(self):

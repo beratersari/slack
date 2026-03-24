@@ -7,7 +7,7 @@ from core.models import User, UserType
 
 
 class Command(BaseCommand):
-    help = 'Create dummy users for each user type (Admin, Super User, Super Group User, User)'
+    help = 'Create dummy users for each user type (Admin, Super User, Super Workspace User, User)'
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -49,12 +49,12 @@ class Command(BaseCommand):
                 'department': 'Management',
             },
             {
-                'email': 'supergroupuser@slackclone.com',
-                'username': 'supergroupuser',
-                'first_name': 'Super Group',
+                'email': 'superworkspaceuser@slackclone.com',
+                'username': 'superworkspaceuser',
+                'first_name': 'Super Workspace',
                 'last_name': 'User',
-                'user_type': UserType.SUPER_GROUP_USER.value,
-                'job_title': 'Group Manager',
+                'user_type': UserType.SUPER_WORKSPACE_USER.value,
+                'job_title': 'Workspace Manager',
                 'department': 'Operations',
             },
             {

@@ -9,24 +9,36 @@ from rest_framework.authtoken.models import Token
 from django.contrib.auth import logout as django_logout
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample
 
-from core.models import User, UserType, Group, GroupRole, Channel, ChannelType, ChannelRole
-from core.services import AuthService, UserService, GroupService, ChannelService, MessageService
+from core.models import User, UserType, Workspace, WorkspaceRole, Channel, ChannelType, ChannelRole
+from core.services import AuthService, UserService, WorkspaceService, ChannelService, ChannelSectionService, MessageService, EmojiService, NotificationService
 from .serializers import (
     UserSerializer, UserCreateSerializer, UserUpdateSerializer,
     LoginSerializer, LoginResponseSerializer, RegisterSerializer,
     ChangePasswordSerializer, PasswordResetRequestSerializer,
     PasswordResetConfirmSerializer, TokenRefreshSerializer,
     UserTypeSerializer,
-    # Group serializers
-    GroupSerializer, GroupCreateSerializer, GroupUpdateSerializer,
-    GroupMembershipSerializer, GroupAddMemberSerializer, GroupMembershipUpdateSerializer,
+    # Workspace serializers
+    WorkspaceSerializer, WorkspaceCreateSerializer, WorkspaceUpdateSerializer,
+    WorkspaceMembershipSerializer, WorkspaceAddMemberSerializer, WorkspaceMembershipUpdateSerializer,
     # Channel serializers
-    ChannelSerializer, ChannelCreateSerializer, ChannelUpdateSerializer,
-    ChannelMembershipSerializer, ChannelAddMemberSerializer, DirectMessageSerializer,
+    ChannelSerializer, ChannelListSerializer, ChannelDetailSerializer,
+    ChannelCreateSerializer, ChannelUpdateSerializer,
+    ChannelMembershipSerializer, ChannelMembershipListSerializer,
+    ChannelAddMemberSerializer, DirectMessageSerializer,
+    # Channel Section serializers
+    ChannelSectionSerializer, ChannelSectionCreateSerializer, ChannelSectionUpdateSerializer,
+    ChannelSectionReorderSerializer, AddChannelToSectionSerializer, ReorderChannelsSerializer, MoveChannelSerializer,
     # Message serializers
-    MessageSerializer, MessageDetailSerializer, MessageEditHistorySerializer,
+    MessageSerializer, MessageListSerializer, MessageDetailSerializer, MessageEditHistorySerializer,
     MessageCreateSerializer, MessageReplySerializer, MessageEditSerializer,
-    DirectMessageCreateSerializer, DMConversationSerializer
+    DirectMessageCreateSerializer, DMConversationSerializer,
+    # Emoji serializers
+    MessageReactionSerializer, ReactionSummarySerializer, MessageReactionsResponseSerializer,
+    AddReactionSerializer, CustomEmojiSerializer, CustomEmojiCreateSerializer, CustomEmojiAliasSerializer,
+    # Notification serializers
+    NotificationSerializer, NotificationListSerializer, NotificationSettingsSerializer,
+    NotificationSettingsUpdateSerializer, UnreadCountSerializer, UnreadSummarySerializer,
+    KeywordAlertSerializer, KeywordAlertCreateSerializer, MarkNotificationReadSerializer
 )
 
 
@@ -461,47 +473,47 @@ class UserStatisticsView(APIView):
 
 
 # ============================================
-# Group Views
+# Workspace Views
 # ============================================
 
-class GroupListView(APIView):
+class WorkspaceListView(APIView):
     """
-    API view for listing and creating groups.
+    API view for listing and creating workspaces.
     """
     permission_classes = [IsAuthenticated]
     
     def __init__(self):
         super().__init__()
-        self.group_service = GroupService()
+        self.workspace_service = WorkspaceService()
     
     @extend_schema(
-        summary="List groups",
-        description="Returns groups the user is a member of (or all groups for admins)",
-        responses={200: GroupSerializer(many=True)}
+        summary="List workspaces",
+        description="Returns workspaces the user is a member of (or all workspaces for admins)",
+        responses={200: WorkspaceSerializer(many=True)}
     )
     def get(self, request):
-        """Get list of groups."""
+        """Get list of workspaces."""
         if request.user.is_admin() or request.user.is_super_user_type():
-            groups = self.group_service.get_active_groups()
+            workspaces = self.workspace_service.get_active_workspaces()
         else:
-            groups = self.group_service.get_groups_by_member(request.user.id)
+            workspaces = self.workspace_service.get_workspaces_by_member(request.user.id)
         
-        serializer = GroupSerializer(groups, many=True)
+        serializer = WorkspaceSerializer(workspaces, many=True)
         return Response(serializer.data)
     
     @extend_schema(
-        summary="Create group",
-        description="Create a new group (admin/super user only)",
-        request=GroupCreateSerializer,
-        responses={201: GroupSerializer}
+        summary="Create workspace",
+        description="Create a new workspace (admin/super user only)",
+        request=WorkspaceCreateSerializer,
+        responses={201: WorkspaceSerializer}
     )
     def post(self, request):
-        """Create a new group."""
-        serializer = GroupCreateSerializer(data=request.data)
+        """Create a new workspace."""
+        serializer = WorkspaceCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
         try:
-            group = self.group_service.create_group(
+            workspace = self.workspace_service.create_workspace(
                 name=serializer.validated_data['name'],
                 owner_id=request.user.id,
                 description=serializer.validated_data.get('description', ''),
@@ -511,142 +523,142 @@ class GroupListView(APIView):
             )
             
             return Response({
-                'message': 'Group created successfully',
-                'group': GroupSerializer(group).data
+                'message': 'Workspace created successfully',
+                'workspace': WorkspaceSerializer(workspace).data
             }, status=status.HTTP_201_CREATED)
             
         except ValueError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-class GroupDetailView(APIView):
+class WorkspaceDetailView(APIView):
     """
-    API view for individual group operations.
+    API view for individual workspace operations.
     """
     permission_classes = [IsAuthenticated]
     
     def __init__(self):
         super().__init__()
-        self.group_service = GroupService()
+        self.workspace_service = WorkspaceService()
     
-    @extend_schema(summary="Get group by ID", responses={200: GroupSerializer})
-    def get(self, request, group_id):
-        """Get group by ID."""
-        group = self.group_service.get_group_by_id(group_id)
-        if not group:
-            return Response({'error': 'Group not found'}, status=status.HTTP_404_NOT_FOUND)
+    @extend_schema(summary="Get workspace by ID", responses={200: WorkspaceSerializer})
+    def get(self, request, workspace_id):
+        """Get workspace by ID."""
+        workspace = self.workspace_service.get_workspace_by_id(workspace_id)
+        if not workspace:
+            return Response({'error': 'Workspace not found'}, status=status.HTTP_404_NOT_FOUND)
         
         # Check access
-        if group.is_private and not self.group_service.is_member(group_id, request.user.id):
+        if workspace.is_private and not self.workspace_service.is_member(workspace_id, request.user.id):
             if not (request.user.is_admin() or request.user.is_super_user_type()):
                 return Response({'error': 'Access denied'}, status=status.HTTP_403_FORBIDDEN)
         
-        serializer = GroupSerializer(group)
+        serializer = WorkspaceSerializer(workspace)
         return Response(serializer.data)
     
-    @extend_schema(summary="Update group", request=GroupUpdateSerializer)
-    def patch(self, request, group_id):
-        """Update group."""
-        serializer = GroupUpdateSerializer(data=request.data)
+    @extend_schema(summary="Update workspace", request=WorkspaceUpdateSerializer)
+    def patch(self, request, workspace_id):
+        """Update workspace."""
+        serializer = WorkspaceUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
         try:
-            group = self.group_service.update_group(
-                group_id=group_id,
+            workspace = self.workspace_service.update_workspace(
+                workspace_id=workspace_id,
                 user_id=request.user.id,
                 **serializer.validated_data
             )
             return Response({
-                'message': 'Group updated successfully',
-                'group': GroupSerializer(group).data
+                'message': 'Workspace updated successfully',
+                'workspace': WorkspaceSerializer(workspace).data
             })
         except ValueError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
     
-    @extend_schema(summary="Delete group")
-    def delete(self, request, group_id):
-        """Delete group."""
+    @extend_schema(summary="Delete workspace")
+    def delete(self, request, workspace_id):
+        """Delete workspace."""
         try:
-            self.group_service.delete_group(group_id, request.user.id)
-            return Response({'message': 'Group deleted successfully'})
+            self.workspace_service.delete_workspace(workspace_id, request.user.id)
+            return Response({'message': 'Workspace deleted successfully'})
         except ValueError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-class GroupMembersView(APIView):
+class WorkspaceMembersView(APIView):
     """
-    API view for group membership operations.
+    API view for workspace membership operations.
     """
     permission_classes = [IsAuthenticated]
     
     def __init__(self):
         super().__init__()
-        self.group_service = GroupService()
+        self.workspace_service = WorkspaceService()
     
-    @extend_schema(summary="Get group members", responses={200: GroupMembershipSerializer(many=True)})
-    def get(self, request, group_id):
-        """Get all members of a group."""
-        members = self.group_service.get_group_members(group_id)
-        serializer = GroupMembershipSerializer(members, many=True)
+    @extend_schema(summary="Get workspace members", responses={200: WorkspaceMembershipSerializer(many=True)})
+    def get(self, request, workspace_id):
+        """Get all members of a workspace."""
+        members = self.workspace_service.get_workspace_members(workspace_id)
+        serializer = WorkspaceMembershipSerializer(members, many=True)
         return Response(serializer.data)
     
-    @extend_schema(summary="Add member to group", request=GroupAddMemberSerializer)
-    def post(self, request, group_id):
-        """Add a member to a group."""
-        serializer = GroupAddMemberSerializer(data=request.data)
+    @extend_schema(summary="Add member to workspace", request=WorkspaceAddMemberSerializer)
+    def post(self, request, workspace_id):
+        """Add a member to a workspace."""
+        serializer = WorkspaceAddMemberSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
         try:
-            membership = self.group_service.add_member(
-                group_id=group_id,
+            membership = self.workspace_service.add_member(
+                workspace_id=workspace_id,
                 user_id=serializer.validated_data['user_id'],
                 added_by_id=request.user.id,
-                role=serializer.validated_data.get('role', GroupRole.MEMBER.value)
+                role=serializer.validated_data.get('role', WorkspaceRole.MEMBER.value)
             )
             return Response({
                 'message': 'Member added successfully',
-                'membership': GroupMembershipSerializer(membership).data
+                'membership': WorkspaceMembershipSerializer(membership).data
             }, status=status.HTTP_201_CREATED)
         except ValueError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-class GroupMemberDetailView(APIView):
+class WorkspaceMemberDetailView(APIView):
     """
-    API view for individual group member operations.
+    API view for individual workspace member operations.
     """
     permission_classes = [IsAuthenticated]
     
     def __init__(self):
         super().__init__()
-        self.group_service = GroupService()
+        self.workspace_service = WorkspaceService()
     
-    @extend_schema(summary="Update member role", request=GroupMembershipUpdateSerializer)
-    def patch(self, request, group_id, user_id):
+    @extend_schema(summary="Update member role", request=WorkspaceMembershipUpdateSerializer)
+    def patch(self, request, workspace_id, user_id):
         """Update a member's role."""
-        serializer = GroupMembershipUpdateSerializer(data=request.data)
+        serializer = WorkspaceMembershipUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
         try:
-            membership = self.group_service.update_member_role(
-                group_id=group_id,
+            membership = self.workspace_service.update_member_role(
+                workspace_id=workspace_id,
                 user_id=user_id,
                 new_role=serializer.validated_data['role'],
                 updated_by_id=request.user.id
             )
             return Response({
                 'message': 'Member role updated',
-                'membership': GroupMembershipSerializer(membership).data
+                'membership': WorkspaceMembershipSerializer(membership).data
             })
         except ValueError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
     
-    @extend_schema(summary="Remove member from group")
-    def delete(self, request, group_id, user_id):
-        """Remove a member from a group."""
+    @extend_schema(summary="Remove member from workspace")
+    def delete(self, request, workspace_id, user_id):
+        """Remove a member from a workspace."""
         try:
-            self.group_service.remove_member(
-                group_id=group_id,
+            self.workspace_service.remove_member(
+                workspace_id=workspace_id,
                 user_id=user_id,
                 removed_by_id=request.user.id
             )
@@ -655,26 +667,26 @@ class GroupMemberDetailView(APIView):
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-class GroupSearchView(APIView):
+class WorkspaceSearchView(APIView):
     """
-    API view for searching groups.
+    API view for searching workspaces.
     """
     permission_classes = [IsAuthenticated]
     
     def __init__(self):
         super().__init__()
-        self.group_service = GroupService()
+        self.workspace_service = WorkspaceService()
     
     @extend_schema(
-        summary="Search groups",
+        summary="Search workspaces",
         parameters=[OpenApiParameter(name='q', description='Search query', required=True, type=str)],
-        responses={200: GroupSerializer(many=True)}
+        responses={200: WorkspaceSerializer(many=True)}
     )
     def get(self, request):
-        """Search groups by query."""
+        """Search workspaces by query."""
         query = request.query_params.get('q', '')
-        groups = self.group_service.search_groups(query, request.user.id)
-        serializer = GroupSerializer(groups, many=True)
+        workspaces = self.workspace_service.search_workspaces(query, request.user.id)
+        serializer = WorkspaceSerializer(workspaces, many=True)
         return Response(serializer.data)
 
 
@@ -694,31 +706,31 @@ class ChannelListView(APIView):
     
     @extend_schema(
         summary="List channels",
-        parameters=[OpenApiParameter(name='group_id', description='Filter by group ID', required=False, type=int)],
-        responses={200: ChannelSerializer(many=True)}
+        parameters=[OpenApiParameter(name='workspace_id', description='Filter by workspace ID', required=False, type=int)],
+        responses={200: ChannelListSerializer(many=True)}
     )
     def get(self, request):
         """Get list of channels."""
-        group_id = request.query_params.get('group_id')
+        workspace_id = request.query_params.get('workspace_id')
         
         if request.user.is_admin() or request.user.is_super_user_type():
-            if group_id:
-                channels = self.channel_service.get_channels_by_group(int(group_id))
+            if workspace_id:
+                channels = self.channel_service.get_channels_by_workspace(int(workspace_id))
             else:
                 channels = self.channel_service.get_active_channels()
         else:
             channels = self.channel_service.get_channels_by_member(request.user.id)
-            if group_id:
-                channels = [c for c in channels if c.group_id == int(group_id)]
+            if workspace_id:
+                channels = [c for c in channels if c.workspace_id == int(workspace_id)]
         
-        serializer = ChannelSerializer(channels, many=True)
+        serializer = ChannelListSerializer(channels, many=True)
         return Response(serializer.data)
     
     @extend_schema(
         summary="Create channel",
-        description="Create a new channel (admin/super user/group admin only)",
+        description="Create a new channel (admin/super user/workspace admin only)",
         request=ChannelCreateSerializer,
-        responses={201: ChannelSerializer}
+        responses={201: ChannelDetailSerializer}
     )
     def post(self, request):
         """Create a new channel."""
@@ -728,7 +740,7 @@ class ChannelListView(APIView):
         try:
             channel = self.channel_service.create_channel(
                 name=serializer.validated_data['name'],
-                group_id=serializer.validated_data['group_id'],
+                workspace_id=serializer.validated_data['workspace_id'],
                 created_by_id=request.user.id,
                 channel_type=serializer.validated_data.get('channel_type', ChannelType.PUBLIC.value),
                 description=serializer.validated_data.get('description', ''),
@@ -737,7 +749,7 @@ class ChannelListView(APIView):
             
             return Response({
                 'message': 'Channel created successfully',
-                'channel': ChannelSerializer(channel).data
+                'channel': ChannelDetailSerializer(channel).data
             }, status=status.HTTP_201_CREATED)
             
         except ValueError as e:
@@ -754,7 +766,7 @@ class ChannelDetailView(APIView):
         super().__init__()
         self.channel_service = ChannelService()
     
-    @extend_schema(summary="Get channel by ID", responses={200: ChannelSerializer})
+    @extend_schema(summary="Get channel by ID", responses={200: ChannelDetailSerializer})
     def get(self, request, channel_id):
         """Get channel by ID."""
         channel = self.channel_service.get_channel_by_id(channel_id)
@@ -766,7 +778,7 @@ class ChannelDetailView(APIView):
             if not (request.user.is_admin() or request.user.is_super_user_type()):
                 return Response({'error': 'Access denied'}, status=status.HTTP_403_FORBIDDEN)
         
-        serializer = ChannelSerializer(channel)
+        serializer = ChannelDetailSerializer(channel)
         return Response(serializer.data)
     
     @extend_schema(summary="Update channel", request=ChannelUpdateSerializer)
@@ -783,7 +795,7 @@ class ChannelDetailView(APIView):
             )
             return Response({
                 'message': 'Channel updated successfully',
-                'channel': ChannelSerializer(channel).data
+                'channel': ChannelDetailSerializer(channel).data
             })
         except ValueError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -808,11 +820,11 @@ class ChannelMembersView(APIView):
         super().__init__()
         self.channel_service = ChannelService()
     
-    @extend_schema(summary="Get channel members", responses={200: ChannelMembershipSerializer(many=True)})
+    @extend_schema(summary="Get channel members", responses={200: ChannelMembershipListSerializer(many=True)})
     def get(self, request, channel_id):
         """Get all members of a channel."""
         members = self.channel_service.get_channel_members(channel_id)
-        serializer = ChannelMembershipSerializer(members, many=True)
+        serializer = ChannelMembershipListSerializer(members, many=True)
         return Response(serializer.data)
     
     @extend_schema(summary="Add member to channel", request=ChannelAddMemberSerializer)
@@ -870,14 +882,14 @@ class ChannelJoinView(APIView):
         super().__init__()
         self.channel_service = ChannelService()
     
-    @extend_schema(summary="Join a public channel")
+    @extend_schema(summary="Join a public channel", responses={201: ChannelMembershipListSerializer})
     def post(self, request, channel_id):
         """Join a public channel."""
         try:
             membership = self.channel_service.join_public_channel(channel_id, request.user.id)
             return Response({
                 'message': 'Joined channel successfully',
-                'membership': ChannelMembershipSerializer(membership).data
+                'membership': ChannelMembershipListSerializer(membership).data
             }, status=status.HTTP_201_CREATED)
         except ValueError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -897,21 +909,21 @@ class ChannelSearchView(APIView):
         summary="Search channels",
         parameters=[
             OpenApiParameter(name='q', description='Search query', required=True, type=str),
-            OpenApiParameter(name='group_id', description='Filter by group ID', required=False, type=int)
+            OpenApiParameter(name='workspace_id', description='Filter by workspace ID', required=False, type=int)
         ],
-        responses={200: ChannelSerializer(many=True)}
+        responses={200: ChannelListSerializer(many=True)}
     )
     def get(self, request):
         """Search channels by query."""
         query = request.query_params.get('q', '')
-        group_id = request.query_params.get('group_id')
+        workspace_id = request.query_params.get('workspace_id')
         
         channels = self.channel_service.search_channels(
             query=query,
-            group_id=int(group_id) if group_id else None,
+            workspace_id=int(workspace_id) if workspace_id else None,
             user_id=request.user.id
         )
-        serializer = ChannelSerializer(channels, many=True)
+        serializer = ChannelListSerializer(channels, many=True)
         return Response(serializer.data)
 
 
@@ -928,7 +940,7 @@ class DirectMessageView(APIView):
     @extend_schema(
         summary="Get or create direct message channel",
         request=DirectMessageSerializer,
-        responses={200: ChannelSerializer}
+        responses={200: ChannelDetailSerializer}
     )
     def post(self, request):
         """Get or create a direct message channel."""
@@ -939,11 +951,11 @@ class DirectMessageView(APIView):
             channel = self.channel_service.get_or_create_dm_channel(
                 user1_id=request.user.id,
                 user2_id=serializer.validated_data['user_id'],
-                group_id=serializer.validated_data['group_id']
+                workspace_id=serializer.validated_data['workspace_id']
             )
             return Response({
                 'message': 'Direct message channel ready',
-                'channel': ChannelSerializer(channel).data
+                'channel': ChannelDetailSerializer(channel).data
             })
         except ValueError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -965,13 +977,13 @@ class ChannelMessagesView(APIView):
     
     @extend_schema(
         summary="Get channel messages",
-        responses={200: MessageSerializer(many=True)}
+        responses={200: MessageListSerializer(many=True)}
     )
     def get(self, request, channel_id):
         """Get all messages in a channel (top-level, not replies)."""
         try:
             messages = self.message_service.get_channel_messages(channel_id, request.user)
-            serializer = MessageSerializer(messages, many=True)
+            serializer = MessageListSerializer(messages, many=True)
             return Response(serializer.data)
         except ValueError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -1065,13 +1077,13 @@ class MessageThreadView(APIView):
     
     @extend_schema(
         summary="Get thread replies",
-        responses={200: MessageSerializer(many=True)}
+        responses={200: MessageListSerializer(many=True)}
     )
     def get(self, request, message_id):
         """Get all replies in a thread."""
         try:
             replies = self.message_service.get_thread_replies(message_id, request.user)
-            serializer = MessageSerializer(replies, many=True)
+            serializer = MessageListSerializer(replies, many=True)
             return Response(serializer.data)
         except ValueError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -1154,13 +1166,13 @@ class DirectMessageConversationView(APIView):
     
     @extend_schema(
         summary="Get DM conversation with a user",
-        responses={200: MessageSerializer(many=True)}
+        responses={200: MessageListSerializer(many=True)}
     )
     def get(self, request, user_id):
         """Get DM conversation with a specific user."""
         try:
             messages = self.message_service.get_dm_conversation(request.user, user_id)
-            serializer = MessageSerializer(messages, many=True)
+            serializer = MessageListSerializer(messages, many=True)
             return Response(serializer.data)
         except ValueError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -1191,28 +1203,952 @@ class MessageSearchView(APIView):
     API view for searching messages.
     """
     permission_classes = [IsAuthenticated]
-    
+
     def __init__(self):
         super().__init__()
         self.message_service = MessageService()
-    
+
     @extend_schema(
         summary="Search messages",
         parameters=[
             OpenApiParameter(name='q', description='Search query', required=True, type=str),
             OpenApiParameter(name='channel_id', description='Filter by channel ID', required=False, type=int),
         ],
-        responses={200: MessageSerializer(many=True)}
+        responses={200: MessageListSerializer(many=True)}
     )
     def get(self, request):
         """Search messages by content."""
         query = request.query_params.get('q', '')
         channel_id = request.query_params.get('channel_id')
-        
+
         messages = self.message_service.search_messages(
             query=query,
             user=request.user,
             channel_id=int(channel_id) if channel_id else None
         )
-        serializer = MessageSerializer(messages, many=True)
+        serializer = MessageListSerializer(messages, many=True)
         return Response(serializer.data)
+
+
+# ============================================
+# Channel Section Views
+# ============================================
+
+class ChannelSectionListView(APIView):
+    """
+    API view for listing and creating channel sections.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def __init__(self):
+        super().__init__()
+        self.section_service = ChannelSectionService()
+
+    @extend_schema(
+        summary="List channel sections",
+        description="Returns all channel sections for the user in the specified workspace",
+        parameters=[
+            OpenApiParameter(name='workspace_id', description='Workspace ID', required=True, type=int),
+        ],
+        responses={200: ChannelSectionSerializer(many=True)}
+    )
+    def get(self, request):
+        """Get all channel sections for the user in a workspace."""
+        workspace_id = request.query_params.get('workspace_id')
+        if not workspace_id:
+            return Response(
+                {'error': 'workspace_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        sections = self.section_service.get_user_sections(
+            user_id=request.user.id,
+            workspace_id=int(workspace_id)
+        )
+        serializer = ChannelSectionSerializer(sections, many=True)
+        return Response(serializer.data)
+
+    @extend_schema(
+        summary="Create channel section",
+        description="Create a new custom channel section",
+        request=ChannelSectionCreateSerializer,
+        responses={201: ChannelSectionSerializer}
+    )
+    def post(self, request):
+        """Create a new custom channel section."""
+        workspace_id = request.query_params.get('workspace_id')
+        if not workspace_id:
+            return Response(
+                {'error': 'workspace_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = ChannelSectionCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            section = self.section_service.create_custom_section(
+                name=serializer.validated_data['name'],
+                user_id=request.user.id,
+                workspace_id=int(workspace_id),
+                color=serializer.validated_data.get('color'),
+                order=serializer.validated_data.get('order', 0)
+            )
+            return Response({
+                'message': 'Section created successfully',
+                'section': ChannelSectionSerializer(section).data
+            }, status=status.HTTP_201_CREATED)
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ChannelSectionDetailView(APIView):
+    """
+    API view for individual channel section operations.
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = ChannelSectionSerializer
+
+    def __init__(self):
+        super().__init__()
+        self.section_service = ChannelSectionService()
+
+    @extend_schema(
+        summary="Get channel section",
+        responses={200: ChannelSectionSerializer}
+    )
+    def get(self, request, section_id):
+        """Get a channel section with its channels."""
+        try:
+            result = self.section_service.get_section_with_channels(
+                section_id=section_id,
+                user_id=request.user.id
+            )
+            if not result:
+                return Response(
+                    {'error': 'Section not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            serializer = ChannelSectionSerializer(result['section'])
+            return Response(serializer.data)
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_403_FORBIDDEN)
+
+    @extend_schema(
+        summary="Update channel section",
+        request=ChannelSectionUpdateSerializer,
+        responses={200: ChannelSectionSerializer}
+    )
+    def patch(self, request, section_id):
+        """Update a channel section."""
+        serializer = ChannelSectionUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            section = self.section_service.update_section(
+                section_id=section_id,
+                user_id=request.user.id,
+                **serializer.validated_data
+            )
+            return Response({
+                'message': 'Section updated successfully',
+                'section': ChannelSectionSerializer(section).data
+            })
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @extend_schema(summary="Delete channel section")
+    def delete(self, request, section_id):
+        """Delete a custom channel section."""
+        try:
+            self.section_service.delete_section(section_id, request.user.id)
+            return Response({'message': 'Section deleted successfully'})
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ChannelSectionReorderView(APIView):
+    """
+    API view for reordering channel sections.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def __init__(self):
+        super().__init__()
+        self.section_service = ChannelSectionService()
+
+    @extend_schema(
+        summary="Reorder sections",
+        request=ChannelSectionReorderSerializer,
+        responses={200: ChannelSectionSerializer(many=True)}
+    )
+    def post(self, request):
+        """Reorder channel sections."""
+        workspace_id = request.query_params.get('workspace_id')
+        if not workspace_id:
+            return Response(
+                {'error': 'workspace_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = ChannelSectionReorderSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            sections = self.section_service.reorder_sections(
+                user_id=request.user.id,
+                workspace_id=int(workspace_id),
+                section_orders=serializer.validated_data['section_orders']
+            )
+            return Response({
+                'message': 'Sections reordered successfully',
+                'sections': ChannelSectionSerializer(sections, many=True).data
+            })
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ChannelSectionToggleCollapseView(APIView):
+    """
+    API view for toggling section collapsed state.
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = ChannelSectionSerializer
+
+    def __init__(self):
+        super().__init__()
+        self.section_service = ChannelSectionService()
+
+    @extend_schema(
+        summary="Toggle section collapsed",
+        responses={200: ChannelSectionSerializer}
+    )
+    def post(self, request, section_id):
+        """Toggle the collapsed state of a section."""
+        try:
+            section = self.section_service.toggle_section_collapsed(
+                section_id=section_id,
+                user_id=request.user.id
+            )
+            return Response({
+                'message': 'Section collapsed state toggled',
+                'section': ChannelSectionSerializer(section).data
+            })
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ChannelSectionChannelView(APIView):
+    """
+    API view for managing channels within a section.
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = ChannelSectionSerializer
+
+    def __init__(self):
+        super().__init__()
+        self.section_service = ChannelSectionService()
+
+    @extend_schema(
+        summary="Add channel to section",
+        request=AddChannelToSectionSerializer,
+        responses={201: ChannelSectionSerializer}
+    )
+    def post(self, request, section_id):
+        """Add a channel to a section."""
+        serializer = AddChannelToSectionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            self.section_service.add_channel_to_section(
+                section_id=section_id,
+                channel_id=serializer.validated_data['channel_id'],
+                user_id=request.user.id,
+                order=serializer.validated_data.get('order', 0)
+            )
+            # Return updated section
+            result = self.section_service.get_section_with_channels(section_id, request.user.id)
+            return Response({
+                'message': 'Channel added to section',
+                'section': ChannelSectionSerializer(result['section']).data
+            }, status=status.HTTP_201_CREATED)
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @extend_schema(
+        summary="Remove channel from section",
+        parameters=[
+            OpenApiParameter(name='channel_id', description='Channel ID to remove', required=True, type=int),
+        ]
+    )
+    def delete(self, request, section_id):
+        """Remove a channel from a section."""
+        channel_id = request.query_params.get('channel_id')
+        if not channel_id:
+            return Response(
+                {'error': 'channel_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            self.section_service.remove_channel_from_section(
+                section_id=section_id,
+                channel_id=int(channel_id),
+                user_id=request.user.id
+            )
+            return Response({'message': 'Channel removed from section'})
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ChannelSectionReorderChannelsView(APIView):
+    """
+    API view for reordering channels within a section.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def __init__(self):
+        super().__init__()
+        self.section_service = ChannelSectionService()
+
+    @extend_schema(
+        summary="Reorder channels in section",
+        request=ReorderChannelsSerializer,
+        responses={200: ChannelSectionSerializer}
+    )
+    def post(self, request, section_id):
+        """Reorder channels within a section."""
+        serializer = ReorderChannelsSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            self.section_service.reorder_channels_in_section(
+                section_id=section_id,
+                user_id=request.user.id,
+                item_orders=serializer.validated_data['item_orders']
+            )
+            # Return updated section
+            result = self.section_service.get_section_with_channels(section_id, request.user.id)
+            return Response({
+                'message': 'Channels reordered successfully',
+                'section': ChannelSectionSerializer(result['section']).data
+            })
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ChannelSectionMoveChannelView(APIView):
+    """
+    API view for moving a channel from one section to another.
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = MoveChannelSerializer
+
+    def __init__(self):
+        super().__init__()
+        self.section_service = ChannelSectionService()
+
+    @extend_schema(
+        summary="Move channel to another section",
+        request=MoveChannelSerializer
+    )
+    def post(self, request):
+        """Move a channel from one section to another."""
+        serializer = MoveChannelSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            self.section_service.move_channel_to_section(
+                channel_id=serializer.validated_data.get('channel_id'),
+                from_section_id=serializer.validated_data.get('from_section_id'),
+                to_section_id=serializer.validated_data.get('to_section_id'),
+                user_id=request.user.id,
+                order=serializer.validated_data.get('order', 0)
+            )
+            return Response({'message': 'Channel moved successfully'})
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+# ============================================
+# Emoji Views
+# ============================================
+
+class MessageReactionsView(APIView):
+    """
+    API view for message reactions (👍, ❤️, 😂 etc.).
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = MessageReactionsResponseSerializer
+
+    def __init__(self):
+        super().__init__()
+        self.emoji_service = EmojiService()
+
+    @extend_schema(
+        summary="Get message reactions",
+        description="Returns all reactions for a message with count summary",
+        responses={200: MessageReactionsResponseSerializer}
+    )
+    def get(self, request, message_id):
+        """Get all reactions for a message."""
+        try:
+            reactions_data = self.emoji_service.get_message_reactions(message_id)
+            return Response(reactions_data)
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_404_NOT_FOUND)
+
+    @extend_schema(
+        summary="Add reaction to message",
+        request=AddReactionSerializer,
+        responses={201: MessageReactionSerializer}
+    )
+    def post(self, request, message_id):
+        """Add a reaction to a message."""
+        serializer = AddReactionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            reaction = self.emoji_service.add_reaction(
+                message_id=message_id,
+                user_id=request.user.id,
+                emoji=serializer.validated_data['emoji']
+            )
+            return Response({
+                'message': 'Reaction added',
+                'reaction': MessageReactionSerializer(reaction).data
+            }, status=status.HTTP_201_CREATED)
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @extend_schema(
+        summary="Remove reaction from message",
+        parameters=[
+            OpenApiParameter(name='emoji', description='Emoji to remove', required=True, type=str),
+        ]
+    )
+    def delete(self, request, message_id):
+        """Remove a reaction from a message."""
+        emoji = request.query_params.get('emoji')
+        if not emoji:
+            return Response(
+                {'error': 'emoji parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            self.emoji_service.remove_reaction(
+                message_id=message_id,
+                user_id=request.user.id,
+                emoji=emoji
+            )
+            return Response({'message': 'Reaction removed'})
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class MessageReactionToggleView(APIView):
+    """
+    API view for toggling reactions on/off.
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = AddReactionSerializer
+
+    def __init__(self):
+        super().__init__()
+        self.emoji_service = EmojiService()
+
+    @extend_schema(
+        summary="Toggle reaction",
+        description="Add reaction if not present, remove if already exists",
+        request=AddReactionSerializer,
+        responses={200: MessageReactionSerializer}
+    )
+    def post(self, request, message_id):
+        """Toggle a reaction on a message."""
+        serializer = AddReactionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            result = self.emoji_service.toggle_reaction(
+                message_id=message_id,
+                user_id=request.user.id,
+                emoji=serializer.validated_data['emoji']
+            )
+            return Response({
+                'action': result['action'],
+                'reaction': MessageReactionSerializer(result['reaction']).data if result['reaction'] else None
+            })
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class CustomEmojiListView(APIView):
+    """
+    API view for listing and creating custom emojis.
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = CustomEmojiSerializer
+
+    def __init__(self):
+        super().__init__()
+        self.emoji_service = EmojiService()
+
+    @extend_schema(
+        summary="List custom emojis",
+        description="Returns all custom emojis for a workspace",
+        parameters=[
+            OpenApiParameter(name='workspace_id', description='Workspace ID', required=True, type=int),
+        ],
+        responses={200: CustomEmojiSerializer(many=True)}
+    )
+    def get(self, request):
+        """Get all custom emojis for a workspace."""
+        workspace_id = request.query_params.get('workspace_id')
+        if not workspace_id:
+            return Response(
+                {'error': 'workspace_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        emojis = self.emoji_service.get_workspace_emojis(int(workspace_id))
+        serializer = CustomEmojiSerializer(emojis, many=True)
+        return Response(serializer.data)
+
+    @extend_schema(
+        summary="Create custom emoji",
+        description="Upload a new custom emoji (admin only)",
+        request=CustomEmojiCreateSerializer,
+        responses={201: CustomEmojiSerializer}
+    )
+    def post(self, request):
+        """Create a new custom emoji."""
+        workspace_id = request.query_params.get('workspace_id')
+        if not workspace_id:
+            return Response(
+                {'error': 'workspace_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = CustomEmojiCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            emoji = self.emoji_service.create_custom_emoji(
+                name=serializer.validated_data['name'],
+                image=serializer.validated_data['image'],
+                workspace_id=int(workspace_id),
+                created_by_id=request.user.id
+            )
+            return Response({
+                'message': 'Custom emoji created',
+                'emoji': CustomEmojiSerializer(emoji).data
+            }, status=status.HTTP_201_CREATED)
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class CustomEmojiDetailView(APIView):
+    """
+    API view for individual custom emoji operations.
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = CustomEmojiSerializer
+
+    def __init__(self):
+        super().__init__()
+        self.emoji_service = EmojiService()
+
+    @extend_schema(
+        summary="Get custom emoji",
+        responses={200: CustomEmojiSerializer}
+    )
+    def get(self, request, emoji_id):
+        """Get a custom emoji by ID."""
+        emoji = self.emoji_service.emoji_repository.get_by_id(emoji_id)
+        if not emoji:
+            return Response(
+                {'error': 'Emoji not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        serializer = CustomEmojiSerializer(emoji)
+        return Response(serializer.data)
+
+    @extend_schema(summary="Delete custom emoji")
+    def delete(self, request, emoji_id):
+        """Delete a custom emoji."""
+        try:
+            self.emoji_service.delete_custom_emoji(emoji_id, request.user.id)
+            return Response({'message': 'Emoji deleted successfully'})
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_403_FORBIDDEN)
+
+
+class CustomEmojiAliasView(APIView):
+    """
+    API view for creating emoji aliases.
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = CustomEmojiAliasSerializer
+
+    def __init__(self):
+        super().__init__()
+        self.emoji_service = EmojiService()
+
+    @extend_schema(
+        summary="Create emoji alias",
+        description="Create an alternative name for an existing emoji",
+        request=CustomEmojiAliasSerializer,
+        responses={201: CustomEmojiSerializer}
+    )
+    def post(self, request):
+        """Create an alias for an existing emoji."""
+        workspace_id = request.query_params.get('workspace_id')
+        if not workspace_id:
+            return Response(
+                {'error': 'workspace_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = CustomEmojiAliasSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            alias = self.emoji_service.create_emoji_alias(
+                alias_name=serializer.validated_data['alias_name'],
+                original_emoji_id=serializer.validated_data['original_emoji_id'],
+                workspace_id=int(workspace_id),
+                created_by_id=request.user.id
+            )
+            return Response({
+                'message': 'Emoji alias created',
+                'emoji': CustomEmojiSerializer(alias).data
+            }, status=status.HTTP_201_CREATED)
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class CustomEmojiSearchView(APIView):
+    """
+    API view for searching custom emojis.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def __init__(self):
+        super().__init__()
+        self.emoji_service = EmojiService()
+
+    @extend_schema(
+        summary="Search custom emojis",
+        parameters=[
+            OpenApiParameter(name='workspace_id', description='Workspace ID', required=True, type=int),
+            OpenApiParameter(name='q', description='Search query', required=True, type=str),
+        ],
+        responses={200: CustomEmojiSerializer(many=True)}
+    )
+    def get(self, request):
+        """Search custom emojis by name."""
+        workspace_id = request.query_params.get('workspace_id')
+        query = request.query_params.get('q', '')
+
+        if not workspace_id:
+            return Response(
+                {'error': 'workspace_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        emojis = self.emoji_service.search_emojis(int(workspace_id), query)
+        serializer = CustomEmojiSerializer(emojis, many=True)
+        return Response(serializer.data)
+
+
+# ============================================
+# Notification Views
+# ============================================
+
+class NotificationListView(APIView):
+    """
+    API view for listing and managing notifications.
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = NotificationSerializer
+
+    def __init__(self):
+        super().__init__()
+        self.notification_service = NotificationService()
+
+    @extend_schema(
+        summary="List notifications",
+        parameters=[
+            OpenApiParameter(name='unread_only', description='Show only unread', required=False, type=bool),
+            OpenApiParameter(name='limit', description='Max notifications to return', required=False, type=int),
+        ],
+        responses={200: NotificationListSerializer}
+    )
+    def get(self, request):
+        """Get user's notifications."""
+        unread_only = request.query_params.get('unread_only', 'false').lower() == 'true'
+        limit = int(request.query_params.get('limit', 50))
+
+        notifications = self.notification_service.notification_repo.get_user_notifications(
+            request.user.id, unread_only=unread_only, limit=limit
+        )
+        unread_count = self.notification_service.notification_repo.get_unread_count(request.user.id)
+        total_count = len(notifications)
+
+        return Response({
+            'notifications': NotificationSerializer(notifications, many=True).data,
+            'unread_count': unread_count,
+            'total_count': total_count
+        })
+
+    @extend_schema(
+        summary="Mark notifications as read",
+        request=MarkNotificationReadSerializer
+    )
+    def post(self, request):
+        """Mark notifications as read."""
+        serializer = MarkNotificationReadSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        notification_ids = serializer.validated_data.get('notification_ids', [])
+        if notification_ids:
+            count = 0
+            for nid in notification_ids:
+                if self.notification_service.notification_repo.mark_as_read(nid, request.user.id):
+                    count += 1
+            return Response({'message': f'{count} notifications marked as read'})
+        else:
+            # Mark all as read
+            count = self.notification_service.notification_repo.mark_all_as_read(request.user.id)
+            return Response({'message': f'{count} notifications marked as read'})
+
+
+class NotificationDetailView(APIView):
+    """
+    API view for individual notification operations.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def __init__(self):
+        super().__init__()
+        self.notification_service = NotificationService()
+
+    @extend_schema(
+        summary="Mark notification as read",
+        responses={200: NotificationSerializer}
+    )
+    def post(self, request, notification_id):
+        """Mark a notification as read."""
+        if self.notification_service.notification_repo.mark_as_read(notification_id, request.user.id):
+            notification = self.notification_service.notification_repo.get_by_id(notification_id)
+            return Response(NotificationSerializer(notification).data)
+        return Response({'error': 'Notification not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    @extend_schema(summary="Delete notification")
+    def delete(self, request, notification_id):
+        """Delete a notification."""
+        if self.notification_service.notification_repo.delete_notification(notification_id, request.user.id):
+            return Response({'message': 'Notification deleted'})
+        return Response({'error': 'Notification not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
+class NotificationSettingsView(APIView):
+    """
+    API view for notification settings.
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = NotificationSettingsSerializer
+
+    def __init__(self):
+        super().__init__()
+        self.notification_service = NotificationService()
+
+    @extend_schema(
+        summary="Get notification settings",
+        responses={200: NotificationSettingsSerializer}
+    )
+    def get(self, request):
+        """Get current user's notification settings."""
+        settings = self.notification_service.get_user_settings(request.user.id)
+        return Response(NotificationSettingsSerializer(settings).data)
+
+    @extend_schema(
+        summary="Update notification settings",
+        request=NotificationSettingsUpdateSerializer,
+        responses={200: NotificationSettingsSerializer}
+    )
+    def patch(self, request):
+        """Update notification settings."""
+        serializer = NotificationSettingsUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        settings = self.notification_service.update_user_settings(
+            request.user.id, **serializer.validated_data
+        )
+        return Response(NotificationSettingsSerializer(settings).data)
+
+
+class UnreadCountView(APIView):
+    """
+    API view for unread counts.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def __init__(self):
+        super().__init__()
+        self.notification_service = NotificationService()
+
+    @extend_schema(
+        summary="Get unread counts",
+        responses={200: UnreadSummarySerializer}
+    )
+    def get(self, request):
+        """Get unread message counts for all channels."""
+        summary = self.notification_service.get_unread_counts(request.user.id)
+        return Response(summary)
+
+    @extend_schema(summary="Mark all channels as read")
+    def post(self, request):
+        """Mark all channels as read for the user."""
+        count = self.notification_service.unread_repo.reset_all_unreads(request.user.id)
+        return Response({'message': f'{count} channels marked as read'})
+
+
+class ChannelUnreadView(APIView):
+    """
+    API view for per-channel unread count.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def __init__(self):
+        super().__init__()
+        self.notification_service = NotificationService()
+
+    @extend_schema(summary="Mark channel as read")
+    def post(self, request, channel_id):
+        """Mark a channel as read."""
+        if self.notification_service.mark_channel_read(request.user.id, channel_id):
+            return Response({'message': 'Channel marked as read'})
+        return Response({'error': 'Channel not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
+class KeywordAlertListView(APIView):
+    """
+    API view for keyword alerts.
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = KeywordAlertSerializer
+
+    def __init__(self):
+        super().__init__()
+        self.notification_service = NotificationService()
+
+    @extend_schema(
+        summary="List keyword alerts",
+        responses={200: KeywordAlertSerializer(many=True)}
+    )
+    def get(self, request):
+        """Get user's keyword alerts."""
+        keywords = self.notification_service.get_user_keywords(request.user.id)
+        return Response(KeywordAlertSerializer(keywords, many=True).data)
+
+    @extend_schema(
+        summary="Add keyword alert",
+        request=KeywordAlertCreateSerializer,
+        responses={201: KeywordAlertSerializer}
+    )
+    def post(self, request):
+        """Add a keyword alert."""
+        serializer = KeywordAlertCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        keyword = self.notification_service.add_keyword_alert(
+            request.user.id,
+            serializer.validated_data['keyword'],
+            serializer.validated_data.get('workspace_id')
+        )
+        return Response(KeywordAlertSerializer(keyword).data, status=status.HTTP_201_CREATED)
+
+
+class KeywordAlertDetailView(APIView):
+    """
+    API view for individual keyword alert operations.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def __init__(self):
+        super().__init__()
+        self.notification_service = NotificationService()
+
+    @extend_schema(summary="Delete keyword alert")
+    def delete(self, request, keyword_id):
+        """Delete a keyword alert."""
+        from core.models import KeywordAlert
+        try:
+            keyword = KeywordAlert.objects.get(id=keyword_id, user=request.user)
+            keyword.delete()
+            return Response({'message': 'Keyword alert deleted'})
+        except KeywordAlert.DoesNotExist:
+            return Response({'error': 'Keyword alert not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
+class MuteChannelView(APIView):
+    """
+    API view for muting/unmuting channels.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def __init__(self):
+        super().__init__()
+        self.notification_service = NotificationService()
+
+    @extend_schema(summary="Mute channel")
+    def post(self, request, channel_id):
+        """Mute notifications for a channel."""
+        if self.notification_service.mute_channel(request.user.id, channel_id):
+            return Response({'message': 'Channel muted'})
+        return Response({'error': 'Failed to mute channel'}, status=status.HTTP_400_BAD_REQUEST)
+
+    @extend_schema(summary="Unmute channel")
+    def delete(self, request, channel_id):
+        """Unmute notifications for a channel."""
+        if self.notification_service.unmute_channel(request.user.id, channel_id):
+            return Response({'message': 'Channel unmuted'})
+        return Response({'error': 'Failed to unmute channel'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class DoNotDisturbView(APIView):
+    """
+    API view for Do Not Disturb settings.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def __init__(self):
+        super().__init__()
+        self.notification_service = NotificationService()
+
+    @extend_schema(summary="Get DND status")
+    def get(self, request):
+        """Get DND status."""
+        settings = self.notification_service.get_user_settings(request.user.id)
+        return Response({
+            'dnd_enabled': settings.dnd_enabled,
+            'dnd_start_time': settings.dnd_start_time,
+            'dnd_end_time': settings.dnd_end_time,
+            'is_currently_active': settings.is_dnd_active()
+        })
+
+    @extend_schema(summary="Set DND status")
+    def post(self, request):
+        """Set DND status."""
+        enabled = request.data.get('enabled', False)
+        start = request.data.get('start_time')
+        end = request.data.get('end_time')
+
+        settings = self.notification_service.set_dnd(request.user.id, enabled, start, end)
+        return Response({
+            'dnd_enabled': settings.dnd_enabled,
+            'dnd_start_time': settings.dnd_start_time,
+            'dnd_end_time': settings.dnd_end_time
+        })

@@ -129,7 +129,7 @@ REST_FRAMEWORK = {
 # Swagger/OpenAPI settings
 SPECTACULAR_SETTINGS = {
     'TITLE': 'Slack Clone API',
-    'DESCRIPTION': 'A Slack Clone Backend API with channels, groups, and user management',
+    'DESCRIPTION': 'A Slack Clone Backend API with channels, workspaces, and user management',
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
     'COMPONENT_SPLIT_REQUEST': True,

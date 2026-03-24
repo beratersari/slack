@@ -46,7 +46,7 @@ class UserService:
             email: User's email address
             username: Unique username
             password: User's password
-            user_type: Type of user (admin, super_user, super_group_user, user)
+            user_type: Type of user (admin, super_user, super_workspace_user, user)
             first_name: User's first name
             last_name: User's last name
             **extra_fields: Additional fields
@@ -160,9 +160,9 @@ class UserService:
         """Get all super users."""
         return self.user_repository.get_super_users()
     
-    def get_super_group_users(self) -> List[User]:
-        """Get all super group users."""
-        return self.user_repository.get_super_group_users()
+    def get_super_workspace_users(self) -> List[User]:
+        """Get all super workspace users."""
+        return self.user_repository.get_super_workspace_users()
     
     def get_regular_users(self) -> List[User]:
         """Get all regular users."""

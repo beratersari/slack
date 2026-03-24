@@ -19,9 +19,9 @@ class ChannelRepository(BaseRepository[Channel]):
         """Get all active channels."""
         return list(Channel.objects.filter(is_active=True))
     
-    def get_channels_by_group(self, group_id: int) -> List[Channel]:
-        """Get all channels in a group."""
-        return list(Channel.objects.filter(group_id=group_id, is_active=True))
+    def get_channels_by_workspace(self, workspace_id: int) -> List[Channel]:
+        """Get all channels in a workspace."""
+        return list(Channel.objects.filter(workspace_id=workspace_id, is_active=True))
     
     def get_channels_by_creator(self, user_id: int) -> List[Channel]:
         """Get all channels created by a user."""
@@ -34,18 +34,18 @@ class ChannelRepository(BaseRepository[Channel]):
             is_active=True
         ).distinct())
     
-    def get_public_channels(self, group_id: int) -> List[Channel]:
-        """Get all public channels in a group."""
+    def get_public_channels(self, workspace_id: int) -> List[Channel]:
+        """Get all public channels in a workspace."""
         return list(Channel.objects.filter(
-            group_id=group_id,
+            workspace_id=workspace_id,
             channel_type=ChannelType.PUBLIC.value,
             is_active=True
         ))
     
-    def get_private_channels(self, group_id: int) -> List[Channel]:
-        """Get all private channels in a group."""
+    def get_private_channels(self, workspace_id: int) -> List[Channel]:
+        """Get all private channels in a workspace."""
         return list(Channel.objects.filter(
-            group_id=group_id,
+            workspace_id=workspace_id,
             channel_type=ChannelType.PRIVATE.value,
             is_active=True
         ))
@@ -57,17 +57,17 @@ class ChannelRepository(BaseRepository[Channel]):
         except Channel.DoesNotExist:
             return None
     
-    def create_channel(self, name: str, group_id: int, created_by_id: int, 
+    def create_channel(self, name: str, workspace_id: int, created_by_id: int, 
                        channel_type: str = ChannelType.PUBLIC.value, **kwargs) -> Channel:
         """Create a new channel."""
-        from core.models import Group, User
+        from core.models import Workspace, User
         
-        group = Group.objects.get(id=group_id)
+        workspace = Workspace.objects.get(id=workspace_id)
         creator = User.objects.get(id=created_by_id)
         
         channel = Channel.objects.create(
             name=name,
-            group=group,
+            workspace=workspace,
             created_by=creator,
             channel_type=channel_type,
             **kwargs
@@ -170,7 +170,7 @@ class ChannelRepository(BaseRepository[Channel]):
             role=ChannelRole.OWNER.value
         ).exists()
     
-    def search_channels(self, query: str, group_id: Optional[int] = None, 
+    def search_channels(self, query: str, workspace_id: Optional[int] = None, 
                         user_id: Optional[int] = None) -> List[Channel]:
         """Search channels by name or description."""
         queryset = Channel.objects.filter(
@@ -178,8 +178,8 @@ class ChannelRepository(BaseRepository[Channel]):
             is_active=True
         )
         
-        if group_id:
-            queryset = queryset.filter(group_id=group_id)
+        if workspace_id:
+            queryset = queryset.filter(workspace_id=workspace_id)
         
         if user_id:
             # Return only channels the user can see
@@ -189,13 +189,13 @@ class ChannelRepository(BaseRepository[Channel]):
         
         return list(queryset)
     
-    def get_or_create_dm_channel(self, user1_id: int, user2_id: int, group_id: int) -> Channel:
+    def get_or_create_dm_channel(self, user1_id: int, user2_id: int, workspace_id: int) -> Channel:
         """Get or create a direct message channel between two users."""
-        from core.models import User, Group
+        from core.models import User, Workspace
         
         # Try to find existing DM channel
         existing = Channel.objects.filter(
-            group_id=group_id,
+            workspace_id=workspace_id,
             channel_type=ChannelType.DIRECT.value,
             memberships__user_id=user1_id
         ).filter(
@@ -208,13 +208,13 @@ class ChannelRepository(BaseRepository[Channel]):
         # Create new DM channel
         user1 = User.objects.get(id=user1_id)
         user2 = User.objects.get(id=user2_id)
-        group = Group.objects.get(id=group_id)
+        workspace = Workspace.objects.get(id=workspace_id)
         
         channel_name = f"dm-{min(user1_id, user2_id)}-{max(user1_id, user2_id)}"
         
         channel = Channel.objects.create(
             name=channel_name,
-            group=group,
+            workspace=workspace,
             created_by=user1,
             channel_type=ChannelType.DIRECT.value,
             dm_with=user2
@@ -226,12 +226,12 @@ class ChannelRepository(BaseRepository[Channel]):
         
         return channel
     
-    def get_channel_statistics(self, group_id: Optional[int] = None) -> Dict[str, Any]:
+    def get_channel_statistics(self, workspace_id: Optional[int] = None) -> Dict[str, Any]:
         """Get channel statistics."""
         base_query = Channel.objects.filter(is_active=True)
         
-        if group_id:
-            base_query = base_query.filter(group_id=group_id)
+        if workspace_id:
+            base_query = base_query.filter(workspace_id=workspace_id)
         
         return {
             'total_channels': base_query.count(),

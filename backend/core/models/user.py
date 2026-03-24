@@ -18,7 +18,7 @@ class UserType(Enum):
     """
     ADMIN = 'admin'
     SUPER_USER = 'super_user'
-    SUPER_GROUP_USER = 'super_group_user'
+    SUPER_WORKSPACE_USER = 'super_workspace_user'
     USER = 'user'
 
     @classmethod
@@ -73,8 +73,8 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
     
     User Types:
     - Admin: Full system access, can manage all users and settings
-    - Super User: Can manage multiple groups and users
-    - Super Group User: Can manage a single group
+    - Super User: Can manage multiple workspaces and users
+    - Super Workspace User: Can manage a single workspace
     - User: Regular user with basic access
     """
     email = models.EmailField(unique=True, db_index=True)
@@ -132,8 +132,8 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
     def is_super_user_type(self):
         return self.user_type == UserType.SUPER_USER.value
 
-    def is_super_group_user(self):
-        return self.user_type == UserType.SUPER_GROUP_USER.value
+    def is_super_workspace_user(self):
+        return self.user_type == UserType.SUPER_WORKSPACE_USER.value
 
     def is_regular_user(self):
         return self.user_type == UserType.USER.value
